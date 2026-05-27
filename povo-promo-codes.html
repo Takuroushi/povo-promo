@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>povo プロモコード管理</title>
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a22;
+      --surface2: #23232f;
+      --border: #2e2e3e;
+      --accent: #7b4fff;
+      --accent-glow: rgba(123, 79, 255, 0.25);
+      --accent2: #ff4fa3;
+      --text: #e8e8f0;
+      --text-muted: #7a7a96;
+      --used-bg: #141418;
+      --used-text: #505060;
+      --success: #4fffb0;
+      --warn: #ffbb4f;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      min-height: 100vh;
+      padding: 24px 16px 60px;
+    }
+
+    header {
+      max-width: 780px;
+      margin: 0 auto 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; flex-shrink: 0;
+    }
+
+    h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; }
+    h1 span { display: block; font-size: 0.75rem; font-weight: 400; color: var(--text-muted); margin-top: 2px; }
+
+    .container { max-width: 780px; margin: 0 auto; }
+
+    /* Setup */
+    .setup-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 24px; margin-bottom: 20px;
+    }
+    .setup-card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; }
+    .setup-card h2::before { content: '⚙️ '; }
+    .input-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    input[type="text"], textarea {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 14px; color: var(--text); font-size: 0.85rem; outline: none;
+      transition: border-color 0.2s; font-family: inherit;
+    }
+    input[type="text"] { flex: 1; min-width: 200px; }
+    input[type="text"]:focus, textarea:focus { border-color: var(--accent); }
+    input[type="text"]::placeholder, textarea::placeholder { color: var(--text-muted); }
+    .hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
+    .hint a { color: var(--accent); text-decoration: none; }
+    .hint a:hover { text-decoration: underline; }
+
+    /* Buttons */
+    button { cursor: pointer; border: none; border-radius: 8px; padding: 10px 20px; font-size: 0.88rem; font-weight: 600; transition: all 0.15s; }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 0 16px var(--accent-glow); }
+    .btn-primary:hover { background: #9166ff; }
+    .btn-primary:disabled { opacity: 0.4; cursor: default; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--text); }
+    .btn-sm { padding: 6px 14px; font-size: 0.8rem; }
+
+    /* Auth status */
+    .auth-status {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 18px; border-radius: var(--radius); margin-bottom: 20px; font-size: 0.88rem;
+    }
+    .auth-status.connected { background: rgba(79,255,176,0.08); border: 1px solid rgba(79,255,176,0.2); color: var(--success); }
+    .auth-status.disconnected { background: rgba(255,187,79,0.08); border: 1px solid rgba(255,187,79,0.2); color: var(--warn); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot.green { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .dot.yellow { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+
+    /* Toolbar */
+    .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+    .toolbar-left { flex: 1; display: flex; gap: 10px; flex-wrap: wrap; }
+    .stats {
+      font-size: 0.8rem; color: var(--text-muted); padding: 6px 14px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 20px; white-space: nowrap;
+    }
+    .stats b { color: var(--text); }
+
+    /* Filter tabs */
+    .filter-tabs {
+      display: flex; gap: 4px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px; padding: 4px; margin-bottom: 20px;
+    }
+    .tab {
+      padding: 6px 16px; border-radius: 6px; font-size: 0.82rem; font-weight: 500;
+      cursor: pointer; border: none; background: transparent; color: var(--text-muted); transition: all 0.15s;
+    }
+    .tab.active { background: var(--accent); color: #fff; }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    /* Code card */
+    .code-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .code-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .code-card:hover { border-color: rgba(123,79,255,0.35); }
+    .code-card.used { opacity: 0.5; background: var(--used-bg); }
+    .code-card.used:hover { border-color: var(--border); opacity: 0.6; }
+
+    /* Card top row */
+    .card-top {
+      display: grid; grid-template-columns: 1fr auto;
+      gap: 12px; align-items: start; padding: 16px 18px 12px;
+    }
+
+    .code-value {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 1.2rem; font-weight: 700; letter-spacing: 0.06em;
+      color: var(--text); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .code-card.used .code-value { color: var(--used-text); text-decoration: line-through; }
+
+    .copy-btn {
+      background: transparent; border: none; color: var(--text-muted);
+      padding: 2px 7px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; transition: all 0.15s;
+    }
+    .copy-btn:hover { background: var(--surface2); color: var(--text); }
+    .copy-btn.copied { color: var(--success); }
+
+    .badge {
+      display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 600;
+    }
+    .badge-active { background: rgba(79,255,176,0.12); color: var(--success); border: 1px solid rgba(79,255,176,0.25); }
+    .badge-used { background: rgba(120,120,140,0.15); color: #666; border: 1px solid rgba(120,120,140,0.2); }
+
+    .code-meta {
+      font-size: 0.77rem; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap;
+    }
+
+    /* Card actions column */
+    .card-actions { display: flex; flex-direction: column; gap: 7px; align-items: flex-end; }
+
+    .check-btn {
+      padding: 8px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; border: 1.5px solid; transition: all 0.15s; white-space: nowrap;
+    }
+    .check-btn.mark-used { border-color: rgba(255,79,163,0.4); color: var(--accent2); background: rgba(255,79,163,0.07); }
+    .check-btn.mark-used:hover { background: rgba(255,79,163,0.15); border-color: var(--accent2); }
+    .check-btn.mark-active { border-color: rgba(79,255,176,0.3); color: var(--success); background: rgba(79,255,176,0.06); }
+    .check-btn.mark-active:hover { background: rgba(79,255,176,0.12); }
+
+    .mail-link {
+      display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem;
+      color: var(--accent); text-decoration: none; padding: 5px 10px;
+      border-radius: 6px; border: 1px solid rgba(123,79,255,0.3);
+      background: rgba(123,79,255,0.07); transition: all 0.15s; white-space: nowrap;
+    }
+    .mail-link:hover { background: rgba(123,79,255,0.15); border-color: var(--accent); }
+
+    /* Mail body section */
+    .card-body-section {
+      border-top: 1px solid var(--border);
+      padding: 12px 18px;
+    }
+    .card-body-section summary {
+      font-size: 0.78rem; color: var(--text-muted); cursor: pointer;
+      user-select: none; list-style: none; display: flex; align-items: center; gap: 6px;
+    }
+    .card-body-section summary::-webkit-details-marker { display: none; }
+    .card-body-section summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.15s; }
+    .card-body-section[open] summary::before { transform: rotate(90deg); }
+    .card-body-section summary:hover { color: var(--text); }
+    .mail-body-text {
+      margin-top: 10px; font-size: 0.8rem; color: var(--text-muted);
+      line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+      background: var(--surface2); border-radius: 8px; padding: 12px 14px;
+      max-height: 300px; overflow-y: auto; border: 1px solid var(--border);
+    }
+
+    /* Memo section */
+    .card-memo-section {
+      border-top: 1px solid var(--border);
+      padding: 12px 18px;
+    }
+    .memo-label {
+      font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .memo-area {
+      width: 100%; min-height: 56px; resize: vertical;
+      border-radius: 7px; padding: 8px 12px; font-size: 0.82rem; line-height: 1.5;
+    }
+    .memo-save-btn {
+      margin-top: 6px; padding: 5px 14px; font-size: 0.78rem;
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
+      border-radius: 6px; cursor: pointer; transition: all 0.15s;
+    }
+    .memo-save-btn:hover { border-color: var(--accent); color: var(--text); }
+    .memo-saved-msg { font-size: 0.72rem; color: var(--success); margin-left: 8px; opacity: 0; transition: opacity 0.3s; }
+    .memo-saved-msg.show { opacity: 1; }
+
+    /* Empty / Loading */
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
+    .empty-state p { font-size: 0.9rem; line-height: 1.6; }
+    .loading-state { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 60px 20px; color: var(--text-muted); font-size: 0.9rem; }
+    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-msg {
+      background: rgba(255,79,79,0.08); border: 1px solid rgba(255,79,79,0.25);
+      border-radius: var(--radius); padding: 14px 18px; font-size: 0.85rem; color: #ff7777; margin-bottom: 16px;
+    }
+
+    footer { max-width: 780px; margin: 40px auto 0; font-size: 0.73rem; color: var(--text-muted); text-align: center; line-height: 1.6; }
+
+    @media (max-width: 520px) {
+      .card-top { grid-template-columns: 1fr; }
+      .card-actions { flex-direction: row; align-items: center; flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📱</div>
+  <h1>povo プロモコード管理
+    <span>Gmailから自動取得・使用済み管理</span>
+  </h1>
+</header>
+
+<div class="container">
+
+  <!-- Setup -->
+  <div class="setup-card" id="setupCard">
+    <h2>Google OAuth クライアントID</h2>
+    <div class="input-row">
+      <input type="text" id="clientIdInput" placeholder="xxxx.apps.googleusercontent.com" />
+      <button class="btn-primary" onclick="saveClientId()">保存して認証</button>
+    </div>
+    <div class="hint">
+      Google Cloud Console で OAuth 2.0 クライアントID（ウェブアプリケーション）を作成し、
+      承認済みの JavaScript 生成元にこのページのオリジンを追加してください。<br>
+      <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com/apis/credentials</a> ／
+      <a href="#" onclick="showHelp(); return false;">セットアップ手順を表示</a>
+    </div>
+  </div>
+
+  <!-- Auth status -->
+  <div class="auth-status disconnected" id="authStatus">
+    <div class="dot yellow"></div>
+    <span id="authStatusText">未認証 — クライアントIDを入力してGmailと連携してください</span>
+    <button class="btn-outline btn-sm" style="margin-left:auto" id="signInBtn" onclick="signIn()" hidden>ログイン</button>
+    <button class="btn-outline btn-sm" style="margin-left:auto" id="signOutBtn" onclick="signOut()" hidden>ログアウト</button>
+  </div>
+
+  <div id="errorMsg" class="error-msg" style="display:none"></div>
+
+  <!-- Toolbar -->
+  <div class="toolbar" id="toolbar" style="display:none">
+    <div class="toolbar-left">
+      <button class="btn-primary" onclick="fetchCodes()">🔄 メールを再取得</button>
+      <div class="stats" id="statsBar">— 件</div>
+    </div>
+  </div>
+
+  <!-- Filter tabs -->
+  <div class="filter-tabs" id="filterTabs" style="display:none">
+    <button class="tab active" onclick="setFilter('all', this)">すべて</button>
+    <button class="tab" onclick="setFilter('active', this)">未使用</button>
+    <button class="tab" onclick="setFilter('used', this)">使用済み</button>
+  </div>
+
+  <!-- Code list -->
+  <div id="codeListArea">
+    <div class="empty-state">
+      <div class="icon">🔑</div>
+      <p>Gmailと連携するとpovoから届いた<br>プロモコードが一覧で表示されます</p>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  このアプリはGmail APIを使用してpovoからのメールのみを読み取ります。<br>
+  データはすべてブラウザ内にのみ保持され、外部サーバーには送信されません。
+</footer>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js"></script>
+<script>
+// ============================================================
+// State
+// ============================================================
+let CLIENT_ID = localStorage.getItem('povo_client_id') || '';
+let tokenClient = null;
+let accessToken = null;
+let allCodes = [];
+// usedSet: Set of code IDs marked as used
+let usedSet = new Set(JSON.parse(localStorage.getItem('povo_used') || '[]'));
+// memos: { [id]: string }
+let memos = JSON.parse(localStorage.getItem('povo_memos') || '{}');
+let currentFilter = 'all';
+
+// ============================================================
+// Init
+// ============================================================
+window.onload = () => {
+  if (CLIENT_ID) {
+    document.getElementById('clientIdInput').value = CLIENT_ID;
+    initGsi();
+  }
+};
+
+function saveClientId() {
+  const val = document.getElementById('clientIdInput').value.trim();
+  if (!val) return showError('クライアントIDを入力してください');
+  CLIENT_ID = val;
+  localStorage.setItem('povo_client_id', CLIENT_ID);
+  initGsi();
+}
+
+function initGsi() {
+  if (!window.google) { setTimeout(initGsi, 300); return; }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/gmail.readonly',
+    callback: (resp) => {
+      if (resp.error) { showError('認証エラー: ' + resp.error); return; }
+      accessToken = resp.access_token;
+      onSignedIn();
+    },
+  });
+  setStatus('disconnected', 'Googleアカウントでログインしてください');
+  document.getElementById('signInBtn').hidden = false;
+}
+
+function signIn() { clearError(); tokenClient.requestAccessToken({ prompt: '' }); }
+
+function signOut() {
+  if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
+  accessToken = null; allCodes = [];
+  setStatus('disconnected', '未認証 — ログインしてGmailと連携してください');
+  document.getElementById('signInBtn').hidden = false;
+  document.getElementById('signOutBtn').hidden = true;
+  document.getElementById('toolbar').style.display = 'none';
+  document.getElementById('filterTabs').style.display = 'none';
+  renderEmpty('🔑', 'Gmailと連携するとpovoから届いた<br>プロモコードが一覧で表示されます');
+}
+
+function onSignedIn() {
+  setStatus('connected', 'Gmailと連携中');
+  document.getElementById('signInBtn').hidden = true;
+  document.getElementById('signOutBtn').hidden = false;
+  document.getElementById('toolbar').style.display = 'flex';
+  document.getElementById('filterTabs').style.display = 'flex';
+  fetchCodes();
+}
+
+// ============================================================
+// Gmail fetch
+// ============================================================
+async function fetchCodes() {
+  clearError(); renderLoading();
+  try {
+    const query = 'from:(povo OR povo.jp OR au-id OR kddi) (プロモコード OR プロモ OR promo)';
+    const threads = await searchGmail(query, 50);
+    const codes = [];
+    const seen = new Set();
+
+    for (const thread of threads) {
+      try {
+        const msg = await getMessage(thread.id);
+        const extracted = extractPromoCodes(msg, thread.id);
+        for (const item of extracted) {
+          if (!seen.has(item.code)) {
+            seen.add(item.code);
+            codes.push(item);
+          }
+        }
+      } catch (e) { console.warn('メッセージ取得エラー', thread.id, e); }
+    }
+
+    codes.sort((a, b) => b.dateTs - a.dateTs);
+    allCodes = codes;
+    render();
+  } catch (e) {
+    showError('Gmail取得エラー: ' + (e.message || JSON.stringify(e)));
+    renderEmpty('⚠️', 'メールの取得に失敗しました。再度お試しください。');
+  }
+}
+
+async function searchGmail(q, maxResults = 50) {
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${maxResults}`;
+  return (await gfetch(url)).messages || [];
+}
+
+async function getMessage(id) {
+  return gfetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`);
+}
+
+async function gfetch(url) {
+  const res = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    if (res.status === 401) { accessToken = null; signOut(); throw new Error('セッションが切れました。再度ログインしてください。'); }
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ============================================================
+// Code & body extraction
+// ============================================================
+function extractPromoCodes(msg, threadId) {
+  const headers = msg.payload?.headers || [];
+  const getHeader = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+  const subject = getHeader('Subject');
+  const from = getHeader('From');
+  const dateStr = getHeader('Date');
+  const dateTs = new Date(dateStr).getTime() || 0;
+  const date = dateTs ? new Date(dateTs).toLocaleDateString('ja-JP', {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  }) : dateStr;
+
+  const body = getBodyText(msg.payload);
+
+  // Promo code patterns
+  const patterns = [
+    /プロモコード[：:\s]*([A-Za-z0-9\-]{6,20})/g,
+    /プロモ\s*コード[：:\s]*([A-Za-z0-9\-]{6,20})/g,
+    /プロモーションコード[：:\s]*([A-Za-z0-9\-]{6,20})/g,
+    /promocode[：:\s]*([A-Za-z0-9\-]{6,20})/gi,
+    /promo\s*code[：:\s]*([A-Za-z0-9\-]{6,20})/gi,
+    /コード[：:\s]*([A-Za-z0-9\-]{8,20})/g,
+    /\b([A-Z0-9]{8,16})\b/g,
+    /\b([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b/g,
+  ];
+
+  // Build a clean "mail body summary" — keep meaningful lines only
+  const mailBodySummary = extractMeaningfulLines(body);
+
+  const found = [];
+  const allText = subject + '\n' + body;
+
+  // Try labeled patterns first
+  for (const pat of patterns.slice(0, 6)) {
+    pat.lastIndex = 0;
+    let m;
+    while ((m = pat.exec(allText)) !== null) {
+      const code = m[1].trim();
+      if (isLikelyPromoCode(code)) {
+        found.push({ id: threadId + '_' + code, code, subject, from, date, dateTs, mailBodySummary, messageId: threadId });
+      }
+    }
+  }
+  // Fallback: standalone uppercase codes
+  if (found.length === 0) {
+    for (const pat of patterns.slice(6)) {
+      pat.lastIndex = 0;
+      let m;
+      while ((m = pat.exec(allText)) !== null) {
+        const code = m[1].trim();
+        if (isLikelyPromoCode(code) && !isCommonWord(code)) {
+          found.push({ id: threadId + '_' + code, code, subject, from, date, dateTs, mailBodySummary, messageId: threadId });
+        }
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Extract meaningful lines from the raw mail body text.
+ * Removes blank/noise lines, keeps content-rich lines.
+ * Returns a cleaned multi-line string.
+ */
+function extractMeaningfulLines(rawText) {
+  // Split into lines
+  const lines = rawText
+    .split(/[\n\r]+/)
+    .map(l => l.trim())
+    .filter(l => l.length > 1); // remove empty/single-char lines
+
+  // Remove lines that look like URLs, headers, or boilerplate
+  const skipPatterns = [
+    /^https?:\/\//i,
+    /^mailto:/i,
+    /^={3,}$/,
+    /^-{3,}$/,
+    /^\*{3,}$/,
+    /^Content-/i,
+    /^MIME-/i,
+    /^X-/i,
+    /^Received:/i,
+    /^Message-ID:/i,
+    /^Boundary/i,
+  ];
+
+  const filtered = lines.filter(l => {
+    for (const p of skipPatterns) if (p.test(l)) return false;
+    // Skip very short lines that are just punctuation/numbers with no Japanese/alphabet content
+    if (l.length < 3 && !/[　-鿿＀-￯]/.test(l)) return false;
+    return true;
+  });
+
+  // Deduplicate consecutive identical lines
+  const deduped = filtered.filter((l, i) => i === 0 || l !== filtered[i - 1]);
+
+  return deduped.join('\n');
+}
+
+function getBodyText(payload) {
+  if (!payload) return '';
+  let text = '';
+  if (payload.body?.data) {
+    text += safeAtob(payload.body.data);
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/plain' && part.body?.data) {
+        text += safeAtob(part.body.data);
+      } else if (part.mimeType === 'text/html' && part.body?.data) {
+        // Only use HTML if no plain text yet
+        const decoded = safeAtob(part.body.data);
+        // Strip tags for HTML
+        text += decoded.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                       .replace(/<br\s*\/?>/gi, '\n')
+                       .replace(/<\/p>/gi, '\n')
+                       .replace(/<\/div>/gi, '\n')
+                       .replace(/<\/tr>/gi, '\n')
+                       .replace(/<\/td>/gi, ' ')
+                       .replace(/<[^>]+>/g, '')
+                       .replace(/&nbsp;/g, ' ')
+                       .replace(/&amp;/g, '&')
+                       .replace(/&lt;/g, '<')
+                       .replace(/&gt;/g, '>')
+                       .replace(/&quot;/g, '"')
+                       .replace(/&#39;/g, "'");
+      }
+      if (part.parts) text += getBodyText(part);
+    }
+  }
+  return text;
+}
+
+function safeAtob(b64) {
+  try { return decodeURIComponent(escape(atob(b64.replace(/-/g, '+').replace(/_/g, '/')))); }
+  catch { try { return atob(b64.replace(/-/g, '+').replace(/_/g, '/')); } catch { return ''; } }
+}
+
+function isLikelyPromoCode(s) {
+  if (!s || s.length < 6 || s.length > 20) return false;
+  if (!/[A-Za-z0-9]/.test(s)) return false;
+  if (/^(.)\1+$/.test(s)) return false;
+  return true;
+}
+
+function isCommonWord(s) {
+  return ['HTTP','HTTPS','HTML','FROM','DATE','MIME','TEXT','BASE','MAIL','KDDI','POVO','GMAIL','JSON','UTF8'].includes(s.toUpperCase());
+}
+
+// ============================================================
+// Used state
+// ============================================================
+function toggleUsed(id) {
+  if (usedSet.has(id)) usedSet.delete(id); else usedSet.add(id);
+  localStorage.setItem('povo_used', JSON.stringify([...usedSet]));
+  render();
+}
+
+// ============================================================
+// Memo
+// ============================================================
+function saveMemo(id) {
+  const ta = document.getElementById('memo-' + CSS.escape(id));
+  if (!ta) return;
+  memos[id] = ta.value;
+  localStorage.setItem('povo_memos', JSON.stringify(memos));
+  // Show saved indicator
+  const msg = document.getElementById('memo-saved-' + CSS.escape(id));
+  if (msg) { msg.classList.add('show'); setTimeout(() => msg.classList.remove('show'), 1800); }
+}
+
+// ============================================================
+// Filter
+// ============================================================
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+// ============================================================
+// Render
+// ============================================================
+function render() {
+  const filtered = allCodes.filter(c => {
+    if (currentFilter === 'active') return !usedSet.has(c.id);
+    if (currentFilter === 'used') return usedSet.has(c.id);
+    return true;
+  });
+
+  const total = allCodes.length;
+  const usedCount = allCodes.filter(c => usedSet.has(c.id)).length;
+  document.getElementById('statsBar').innerHTML =
+    `合計 <b>${total}</b> 件 ／ 未使用 <b>${total - usedCount}</b> 件 ／ 使用済み <b>${usedCount}</b> 件`;
+
+  const area = document.getElementById('codeListArea');
+
+  if (filtered.length === 0) {
+    area.innerHTML = allCodes.length === 0
+      ? `<div class="empty-state"><div class="icon">📭</div><p>povoからのプロモコードメールが見つかりませんでした。</p></div>`
+      : `<div class="empty-state"><div class="icon">✅</div><p>このフィルターに該当するコードはありません</p></div>`;
+    return;
+  }
+
+  area.innerHTML = `<div class="code-list">${filtered.map(renderCard).join('')}</div>`;
+}
+
+function renderCard(c) {
+  const isUsed = usedSet.has(c.id);
+  const safeId = c.id.replace(/[^a-z0-9]/gi, '_');
+  const memo = memos[c.id] || '';
+
+  const statusBadge = isUsed
+    ? `<span class="badge badge-used">使用済み</span>`
+    : `<span class="badge badge-active">未使用</span>`;
+
+  const checkBtn = isUsed
+    ? `<button class="check-btn mark-active" onclick="toggleUsed('${escAttr(c.id)}')">↩ 未使用に戻す</button>`
+    : `<button class="check-btn mark-used" onclick="toggleUsed('${escAttr(c.id)}')">✓ 使用済みにする</button>`;
+
+  const mailLink = c.messageId
+    ? `<a class="mail-link" href="https://mail.google.com/mail/u/0/#inbox/${escAttr(c.messageId)}" target="_blank" rel="noopener">✉️ メールを開く</a>`
+    : '';
+
+  // Mail body: show full extracted lines in a collapsible <details>
+  const bodySection = c.mailBodySummary
+    ? `<details class="card-body-section">
+        <summary>メール内容を見る</summary>
+        <div class="mail-body-text">${escHtml(c.mailBodySummary)}</div>
+      </details>`
+    : '';
+
+  // Memo section
+  const memoSection = `
+    <div class="card-memo-section">
+      <div class="memo-label">📝 メモ</div>
+      <textarea class="memo-area" id="memo-${safeId}" placeholder="自由にメモを入力できます（例: 2024/6/1 使用、友人に譲渡 など）">${escHtml(memo)}</textarea>
+      <div>
+        <button class="memo-save-btn" onclick="saveMemo('${escAttr(c.id)}')">保存</button>
+        <span class="memo-saved-msg" id="memo-saved-${safeId}">✓ 保存しました</span>
+      </div>
+    </div>`;
+
+  return `
+    <div class="code-card ${isUsed ? 'used' : ''}">
+      <div class="card-top">
+        <div class="code-info">
+          <div class="code-value">
+            ${escHtml(c.code)}
+            <button class="copy-btn" onclick="copyCode('${escAttr(c.code)}', this)">📋 コピー</button>
+            ${statusBadge}
+          </div>
+          <div class="code-meta">
+            <span>📅 ${escHtml(c.date)}</span>
+            <span>📧 ${escHtml(c.from)}</span>
+            ${c.subject ? `<span title="${escAttr(c.subject)}" style="max-width:280px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">✉️ ${escHtml(c.subject)}</span>` : ''}
+          </div>
+        </div>
+        <div class="card-actions">
+          ${checkBtn}
+          ${mailLink}
+        </div>
+      </div>
+      ${bodySection}
+      ${memoSection}
+    </div>`;
+}
+
+function copyCode(code, btn) {
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = '✅ コピー済み';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 コピー'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+function renderLoading() {
+  document.getElementById('codeListArea').innerHTML =
+    `<div class="loading-state"><div class="spinner"></div>Gmailを検索中…</div>`;
+}
+
+function renderEmpty(icon, msg) {
+  document.getElementById('codeListArea').innerHTML =
+    `<div class="empty-state"><div class="icon">${icon}</div><p>${msg}</p></div>`;
+}
+
+// ============================================================
+// UI helpers
+// ============================================================
+function setStatus(type, msg) {
+  const el = document.getElementById('authStatus');
+  el.className = 'auth-status ' + type;
+  el.querySelector('.dot').className = 'dot ' + (type === 'connected' ? 'green' : 'yellow');
+  document.getElementById('authStatusText').textContent = msg;
+}
+function showError(msg) { const el = document.getElementById('errorMsg'); el.textContent = msg; el.style.display = 'block'; }
+function clearError() { document.getElementById('errorMsg').style.display = 'none'; }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function showHelp() {
+  alert(`【Google Cloud Console セットアップ手順】
+
+1. https://console.cloud.google.com/ を開く
+2. 新しいプロジェクトを作成（例: povo-promo）
+3. 左メニュー「APIとサービス」→「ライブラリ」→ "Gmail API" を有効化
+4. 「APIとサービス」→「OAuth同意画面」を設定
+   - ユーザータイプ: 外部
+   - アプリ名: povo Promo Manager
+   - テストユーザーに自分のGmailアドレスを追加
+5. 「認証情報」→「認証情報を作成」→「OAuthクライアントID」
+   - アプリケーションの種類: ウェブアプリケーション
+   - 承認済みのJavaScript生成元に追加（例: https://あなた.github.io）
+   - 作成したクライアントIDをコピー
+6. このアプリのクライアントID欄に貼り付けて「保存して認証」
+
+※ローカルサーバーの起動方法（ターミナル）:
+  python3 -m http.server 8080
+  → http://localhost:8080/povo-promo-codes.html を開く`);
+}
+</script>
+</body>
+</html>
