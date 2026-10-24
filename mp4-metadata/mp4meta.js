@@ -187,19 +187,22 @@
     return c;
   }
 
+  function itunesIlst(moov, create) {
+    const ilst = child(findItunesMeta(moov), 'ilst');
+    if (ilst || !create) return ilst;
+    const udta = ensureChild(moov, 'udta', () => container('udta', []));
+    let meta = findItunesMeta(moov);
+    if (!meta) {
+      meta = container('meta', [hdlrBox('mdir', 'appl')], new Uint8Array(4));
+      udta.children.push(meta);
+    }
+    return ensureChild(meta, 'ilst', () => container('ilst', []));
+  }
+
   function applyItunes(moov, changes) {
-    let ilst = child(findItunesMeta(moov), 'ilst');
     for (const [key, value] of Object.entries(changes)) {
       if (value === undefined) continue;
-      if (!ilst && value !== '') {
-        const udta = ensureChild(moov, 'udta', () => container('udta', []));
-        let meta = findItunesMeta(moov);
-        if (!meta) {
-          meta = container('meta', [hdlrBox('mdir', 'appl')], new Uint8Array(4));
-          udta.children.push(meta);
-        }
-        ilst = ensureChild(meta, 'ilst', () => container('ilst', []));
-      }
+      const ilst = itunesIlst(moov, value !== '');
       if (!ilst) continue;
       const remove = key === '©gen' ? ['©gen', 'gnre'] : [key];
       let pos = ilst.children.findIndex(c => remove.includes(c.type));
@@ -209,6 +212,30 @@
         ilst.children.splice(pos, 0, textItem(key, value));
       }
     }
+  }
+
+  // ---- カバー画像 (ilst/covr) ----
+
+  const COVER_TYPES = { 13: 'image/jpeg', 14: 'image/png', 27: 'image/bmp' };
+
+  function readCover(moov) {
+    const item = child(itunesIlst(moov, false), 'covr');
+    const data = child(item, 'data');
+    if (!data || data.children || data.data.length <= 8) return null;
+    const type = COVER_TYPES[u32(data.data, 0)] || 'image/jpeg';
+    return { type, bytes: data.data.slice(8) };
+  }
+
+  // cover: { type: 'image/jpeg' | 'image/png', bytes: Uint8Array } または null (削除)
+  function applyCover(moov, cover) {
+    const ilst = itunesIlst(moov, !!cover);
+    if (!ilst) return;
+    let pos = ilst.children.findIndex(c => c.type === 'covr');
+    ilst.children = ilst.children.filter(c => c.type !== 'covr');
+    if (!cover) return;
+    const head = Uint8Array.of(0, 0, 0, cover.type === 'image/png' ? 14 : 13, 0, 0, 0, 0);
+    if (pos < 0) pos = ilst.children.length;
+    ilst.children.splice(pos, 0, container('covr', [leaf('data', concat([head, cover.bytes]))]));
   }
 
   // ---- QuickTime 形式のメタデータ (moov/meta[mdta]: keys + ilst) ----
@@ -429,6 +456,7 @@
       modification: macToDate(times.modification),
       itunes: readItunes(moov),
       mdta: readMdta(moov).map(({ _item, ...e }) => e),
+      cover: readCover(moov),
       xyz: readXyz(moov),
       loci: readLoci(moov),
       outline: outline(moov, 0, []),
@@ -456,6 +484,7 @@
    *   creation, modification : Date (省略時は変更しない)
    *   applyToTracks          : true ならトラック (tkhd / mdhd) の日時も同じ値にする
    *   itunes                 : { '©nam': '新しい値' | '' (削除) }
+ *   cover                  : { type, bytes } | null (削除) (省略時は変更しない)
    *   mdta                   : applyMdta の list (省略時は変更しない)
    *   xyz                    : 文字列 | '' (削除) (省略時は変更しない)
    *   removeLoci             : true なら udta/loci を削除
@@ -472,6 +501,7 @@
       for (const b of targets) if (b && !b.children) writeTimes(b, c, m);
     }
     if (edits.itunes) applyItunes(moov, edits.itunes);
+    if (edits.cover !== undefined) applyCover(moov, edits.cover);
     if (edits.mdta) applyMdta(moov, edits.mdta);
     if (edits.xyz !== undefined) applyXyz(moov, edits.xyz);
     if (edits.removeLoci) {
@@ -490,8 +520,8 @@
     let filler = null;
     let method = 'none';
 
-    if (delta < 0 && -delta >= 8) {
-      // 小さくなった分を moov 内の free で埋め、後ろのデータ位置を変えない
+    if (delta < 0 && -delta >= 8 && doc.fragmented) {
+      // fMP4 はデータ位置を書き換えられないので、小さくなった分を moov 内の free で埋める
       moov.children.push(leaf('free', new Uint8Array(-delta - 8)));
       delta = 0;
       method = 'padding';

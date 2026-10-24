@@ -62,6 +62,14 @@
   #status { font-size: .9rem; }
   #status.error { color: var(--danger); }
   #status.ok { color: var(--ok); }
+  .cover-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .cover-box { width: 160px; height: 160px; border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center; background: var(--bg); overflow: hidden; color: var(--muted); font-size: .85rem; }
+  .cover-box img { width: 100%; height: 100%; object-fit: contain; }
+  .cover-box.changed { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .cover-actions { flex: 1; min-width: 0; display: grid; gap: 8px; }
+  #framePicker { margin-top: 14px; display: grid; gap: 8px; }
+  #frameVideo { width: 100%; max-height: 360px; background: #000; border-radius: 8px; }
+  #frameSeek { width: 100%; }
   pre.tree { font: .78rem/1.5 ui-monospace, monospace; overflow-x: auto; margin: 8px 0 0; color: var(--muted); }
   [hidden] { display: none !important; }
   @media (max-width: 520px) { td.key { width: auto; } .grid { grid-template-columns: 1fr; } }
@@ -70,7 +78,7 @@
 <body>
 <main>
   <h1>MP4 メタデータエディタ</h1>
-  <p class="lead">MP4 / MOV / M4A の撮影日時やタイトル、位置情報などを修正できます。ファイルはブラウザ内だけで処理され、どこにも送信されません。映像・音声は再エンコードせずそのまま残ります。</p>
+  <p class="lead">MP4 / MOV / M4A の撮影日時やタイトル、カバー画像、位置情報などを修正できます。ファイルはブラウザ内だけで処理され、どこにも送信されません。映像・音声は再エンコードせずそのまま残ります。</p>
 
   <div id="drop" tabindex="0">
     <strong>ここにファイルをドロップ</strong>
@@ -116,6 +124,32 @@
       <h2>タグ</h2>
       <div class="grid" id="tags"></div>
       <p class="hint">空欄にするとそのタグを削除します。</p>
+    </section>
+
+    <section class="card">
+      <h2>カバー画像</h2>
+      <p class="hint" style="margin-top:-6px">ミュージック / TV アプリや VLC などで表示されるサムネイル画像です。JPEG と PNG はそのまま、その他の画像は JPEG に変換して埋め込みます。</p>
+      <div class="cover-row">
+        <div class="cover-box" id="coverBox"><img id="coverImg" alt="カバー画像" hidden><span id="coverNone">なし</span></div>
+        <div class="cover-actions">
+          <div class="row">
+            <button class="small" id="coverPick">画像を選ぶ</button>
+            <button class="small" id="coverFromVideo">動画から切り出す</button>
+            <button class="small danger" id="coverRemove">削除</button>
+          </div>
+          <div class="hint" id="coverInfo"></div>
+          <input type="file" id="coverInput" accept="image/*" hidden>
+        </div>
+      </div>
+      <div id="framePicker" hidden>
+        <video id="frameVideo" muted playsinline preload="auto"></video>
+        <input type="range" id="frameSeek" min="0" max="1000" value="0" aria-label="切り出す位置">
+        <div class="row">
+          <span class="hint" id="frameTime"></span>
+          <button class="small" id="frameUse">このフレームを使う</button>
+          <button class="small" id="frameClose">閉じる</button>
+        </div>
+      </div>
     </section>
 
     <section class="card">
@@ -170,6 +204,9 @@
   let doc = null;
   let mdtaRows = []; // { index, ns, name, original, value, deleted, isText, size }
   let removeLoci = false;
+  let cover = null; // { type, bytes } | null
+  let coverChanged = false;
+  let coverUrl = null;
 
   // ---- 日時のユーティリティ ----
   const pad = (n, w = 2) => String(n).padStart(w, '0');
@@ -267,6 +304,11 @@
     }));
     renderMdta();
 
+    cover = doc.cover;
+    coverChanged = false;
+    closeFramePicker();
+    renderCover();
+
     $('xyz').value = doc.xyz || '';
     $('xyz').dataset.original = $('xyz').value;
     removeLoci = false;
@@ -304,6 +346,59 @@
       tr.append(key, el('td', [input]), act);
       return tr;
     }));
+  }
+
+  function renderCover() {
+    if (coverUrl) URL.revokeObjectURL(coverUrl);
+    coverUrl = null;
+    const img = $('coverImg');
+    if (cover) {
+      coverUrl = URL.createObjectURL(new Blob([cover.bytes], { type: cover.type }));
+      img.src = coverUrl;
+      img.onload = () => {
+        $('coverInfo').textContent = `${cover.type === 'image/png' ? 'PNG' : 'JPEG'} ${img.naturalWidth}×${img.naturalHeight}（${fmtSize(cover.bytes.length)}）` + (coverChanged ? ' ・変更あり' : '');
+      };
+    } else {
+      img.removeAttribute('src');
+      $('coverInfo').textContent = coverChanged ? '削除されます' : '';
+    }
+    img.hidden = !cover;
+    $('coverNone').hidden = !!cover;
+    $('coverRemove').disabled = !cover;
+    $('coverBox').classList.toggle('changed', coverChanged);
+  }
+
+  function setCover(c) {
+    cover = c;
+    coverChanged = true;
+    renderCover();
+  }
+
+  function canvasToJpeg(canvas) {
+    return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('画像を変換できませんでした')), 'image/jpeg', 0.92));
+  }
+
+  async function imageFileToCover(file) {
+    if (file.type === 'image/jpeg' || file.type === 'image/png') {
+      return { type: file.type, bytes: new Uint8Array(await file.arrayBuffer()) };
+    }
+    const bmp = await createImageBitmap(file);
+    const canvas = el('canvas');
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    canvas.getContext('2d').drawImage(bmp, 0, 0);
+    const blob = await canvasToJpeg(canvas);
+    return { type: 'image/jpeg', bytes: new Uint8Array(await blob.arrayBuffer()) };
+  }
+
+  let frameUrl = null;
+  function closeFramePicker() {
+    const v = $('frameVideo');
+    v.removeAttribute('src');
+    v.load();
+    if (frameUrl) URL.revokeObjectURL(frameUrl);
+    frameUrl = null;
+    $('framePicker').hidden = true;
   }
 
   function renderLoci() {
@@ -370,6 +465,57 @@
     mdtaRows = mdtaRows.filter(r => !(r.index === null && /location/i.test(r.name)));
     renderLoci(); renderMdta(); markChanged();
   });
+  $('coverPick').addEventListener('click', () => $('coverInput').click());
+  $('coverInput').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setCover(await imageFileToCover(file));
+      setStatus('');
+    } catch (err) {
+      setStatus('この画像は読み込めませんでした: ' + err.message, 'error');
+    }
+  });
+  $('coverRemove').addEventListener('click', () => setCover(null));
+  $('coverFromVideo').addEventListener('click', () => {
+    if (!doc) return;
+    const v = $('frameVideo');
+    if (frameUrl) URL.revokeObjectURL(frameUrl);
+    frameUrl = URL.createObjectURL(doc.file);
+    v.src = frameUrl;
+    $('frameSeek').value = 0;
+    $('frameTime').textContent = '読み込み中…';
+    $('framePicker').hidden = false;
+  });
+  $('frameVideo').addEventListener('loadeddata', () => { $('frameTime').textContent = fmtDuration($('frameVideo').currentTime); });
+  $('frameVideo').addEventListener('seeked', () => { $('frameTime').textContent = fmtDuration($('frameVideo').currentTime); });
+  $('frameVideo').addEventListener('error', () => {
+    if (!$('framePicker').hidden && $('frameVideo').getAttribute('src')) {
+      $('frameTime').textContent = 'このブラウザではこの動画を再生できないため、切り出せません。';
+    }
+  });
+  $('frameSeek').addEventListener('input', () => {
+    const v = $('frameVideo');
+    if (v.duration) v.currentTime = v.duration * $('frameSeek').value / 1000;
+  });
+  $('frameUse').addEventListener('click', async () => {
+    const v = $('frameVideo');
+    if (!v.videoWidth) { setStatus('動画のフレームがまだ読み込まれていません', 'error'); return; }
+    const canvas = el('canvas');
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    canvas.getContext('2d').drawImage(v, 0, 0);
+    try {
+      const blob = await canvasToJpeg(canvas);
+      setCover({ type: 'image/jpeg', bytes: new Uint8Array(await blob.arrayBuffer()) });
+      closeFramePicker();
+    } catch (err) {
+      setStatus('フレームを切り出せませんでした: ' + err.message, 'error');
+    }
+  });
+  $('frameClose').addEventListener('click', closeFramePicker);
+
   $('resetBtn').addEventListener('click', () => { if (doc) { render(); setStatus(''); } });
 
   function buildEdits() {
@@ -398,6 +544,7 @@
         text: r.isText && (r.index === null || r.value !== r.original) ? r.value : undefined,
       }));
     }
+    if (coverChanged) edits.cover = cover;
     if ($('xyz').value !== $('xyz').dataset.original) edits.xyz = $('xyz').value.trim();
     if (removeLoci && doc.loci) edits.removeLoci = true;
     return edits;
