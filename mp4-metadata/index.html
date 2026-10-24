@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MP4 メタデータエディタ</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #667085; --line: #e3e6eb;
+    --accent: #2f6fed; --accent-text: #fff; --danger: #d13b3b; --ok: #1a8a4a; --field: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b1f27; --text: #e7eaf0; --muted: #98a2b3; --line: #2c323d;
+      --accent: #5b8cff; --accent-text: #0b0e14; --danger: #ff6b6b; --ok: #4cc38a; --field: #12151b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .lead { color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 36px 16px; text-align: center; cursor: pointer; background: var(--card); }
+  #drop.over { border-color: var(--accent); }
+  #drop strong { display: block; font-size: 1.05rem; margin-bottom: 4px; }
+  #drop span { color: var(--muted); font-size: .85rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 16px; }
+  label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 3px; }
+  input[type=text], input[type=datetime-local], textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--text); font: inherit;
+  }
+  textarea { resize: vertical; min-height: 38px; }
+  input:disabled { opacity: .6; }
+  .changed { border-color: var(--accent) !important; box-shadow: 0 0 0 1px var(--accent); }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-size: .88rem; color: var(--text); margin-top: 10px; }
+  .check input { margin-top: 4px; }
+  .hint { color: var(--muted); font-size: .8rem; margin-top: 3px; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 7px 14px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; padding: 10px 22px; }
+  button.danger { color: var(--danger); }
+  button.small { padding: 3px 9px; font-size: .82rem; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  dl.info { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; font-size: .9rem; }
+  dl.info dt { color: var(--muted); }
+  dl.info dd { margin: 0; word-break: break-all; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  td { padding: 5px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+  td.key { font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; width: 38%; }
+  td.act { width: 1%; white-space: nowrap; }
+  tr.deleted td { opacity: .45; text-decoration: line-through; }
+  .actions { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  #status { font-size: .9rem; }
+  #status.error { color: var(--danger); }
+  #status.ok { color: var(--ok); }
+  pre.tree { font: .78rem/1.5 ui-monospace, monospace; overflow-x: auto; margin: 8px 0 0; color: var(--muted); }
+  [hidden] { display: none !important; }
+  @media (max-width: 520px) { td.key { width: auto; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>MP4 メタデータエディタ</h1>
+  <p class="lead">MP4 / MOV / M4A の撮影日時やタイトル、位置情報などを修正できます。ファイルはブラウザ内だけで処理され、どこにも送信されません。映像・音声は再エンコードせずそのまま残ります。</p>
+
+  <div id="drop" tabindex="0">
+    <strong>ここにファイルをドロップ</strong>
+    <span>またはクリックして選択（.mp4 .mov .m4a .m4v .3gp）</span>
+    <input id="fileInput" type="file" accept=".mp4,.mov,.m4a,.m4v,.3gp,video/*,audio/mp4" hidden>
+  </div>
+
+  <div id="editor" hidden>
+    <section class="card" style="margin-top:16px">
+      <h2>ファイル情報</h2>
+      <dl class="info" id="info"></dl>
+      <details>
+        <summary class="hint" style="cursor:pointer;margin-top:10px">ボックス構造を表示</summary>
+        <pre class="tree" id="tree"></pre>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>日時</h2>
+      <div class="grid">
+        <div>
+          <label for="creation">作成日時（撮影日時）</label>
+          <input id="creation" type="datetime-local" step="1">
+          <div class="hint" id="creationUtc"></div>
+        </div>
+        <div>
+          <label for="modification">更新日時</label>
+          <input id="modification" type="datetime-local" step="1">
+          <div class="hint" id="modificationUtc"></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="small" id="sameAsCreation">更新日時を作成日時に合わせる</button>
+        <button class="small" id="shiftBtn">時間をずらす…</button>
+      </div>
+      <p class="hint">入力はこのブラウザのタイムゾーン（<span id="tzName"></span>）で解釈され、ファイルには UTC で保存されます。</p>
+      <label class="check"><input type="checkbox" id="applyToTracks" checked> 各トラック（映像・音声）の日時も同じ値にする</label>
+      <label class="check"><input type="checkbox" id="syncApple" checked> <span>Apple 形式の撮影日時（com.apple.quicktime.creationdate）も更新する<span class="hint" style="display:block">iPhone の写真アプリなどはこちらを優先して読みます。無い場合は追加します。</span></span></label>
+    </section>
+
+    <section class="card">
+      <h2>タグ</h2>
+      <div class="grid" id="tags"></div>
+      <p class="hint">空欄にするとそのタグを削除します。</p>
+    </section>
+
+    <section class="card">
+      <h2>QuickTime メタデータ</h2>
+      <p class="hint" style="margin-top:-6px">iPhone などで撮影した動画に含まれる、機種名・ソフトウェア・撮影日時・位置情報などです。</p>
+      <table><tbody id="mdta"></tbody></table>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="newKey" placeholder="キー（例: com.apple.quicktime.model）" style="flex:2;min-width:180px">
+        <input type="text" id="newValue" placeholder="値" style="flex:1;min-width:120px">
+        <button class="small" id="addKey">追加</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>位置情報</h2>
+      <div class="grid">
+        <div>
+          <label for="xyz">位置 ©xyz（ISO 6709 形式 例: +35.6812+139.7671/）</label>
+          <input id="xyz" type="text">
+        </div>
+        <div>
+          <label>3GPP 形式の位置 (loci)</label>
+          <div id="lociText" style="padding-top:6px"></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="danger" id="clearLocation">位置情報をすべて削除</button>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button class="primary" id="saveBtn">保存してダウンロード</button>
+      <button id="resetBtn">変更を取り消す</button>
+      <span id="status"></span>
+    </div>
+  </div>
+</main>
+
+<script src="mp4meta.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+
+  const TAGS = [
+    ['©nam', 'タイトル'], ['©ART', 'アーティスト'], ['aART', 'アルバムアーティスト'], ['©alb', 'アルバム'],
+    ['©day', '日付・年'], ['©gen', 'ジャンル'], ['©wrt', '作曲者'], ['cprt', '著作権'],
+    ['©cmt', 'コメント', true], ['desc', '説明', true], ['©too', 'エンコーダー'],
+  ];
+  const APPLE_DATE = 'com.apple.quicktime.creationdate';
+
+  let doc = null;
+  let mdtaRows = []; // { index, ns, name, original, value, deleted, isText, size }
+  let removeLoci = false;
+
+  // ---- 日時のユーティリティ ----
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  function toLocalInput(d) {
+    if (!d || isNaN(d)) return '';
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  function fromLocalInput(v) { const d = v ? new Date(v) : null; return d && !isNaN(d) ? d : null; }
+  function appleDate(d) {
+    const off = -d.getTimezoneOffset();
+    const sign = off >= 0 ? '+' : '-';
+    return toLocalInput(d) + sign + pad(Math.floor(Math.abs(off) / 60)) + pad(Math.abs(off) % 60);
+  }
+  function utcLabel(d) { return d ? 'UTC: ' + d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '') : '未設定'; }
+  function fmtSize(n) {
+    const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(i ? 1 : 0)} ${u[i]}`;
+  }
+  function fmtDuration(s) {
+    if (s == null) return '不明';
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = (s % 60).toFixed(2);
+    return (h ? `${h}:${pad(m)}` : `${m}`) + ':' + sec.padStart(5, '0');
+  }
+
+  // ---- ファイル読み込み ----
+  const drop = $('drop');
+  drop.addEventListener('click', () => $('fileInput').click());
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') $('fileInput').click(); });
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('over');
+    if (e.dataTransfer.files[0]) openFile(e.dataTransfer.files[0]);
+  });
+  $('fileInput').addEventListener('change', e => { if (e.target.files[0]) openFile(e.target.files[0]); e.target.value = ''; });
+
+  async function openFile(file) {
+    setStatus('読み込み中…');
+    try {
+      doc = await MP4Meta.load(file);
+    } catch (err) {
+      doc = null;
+      $('editor').hidden = true;
+      setStatus(err.message, 'error');
+      drop.querySelector('strong').textContent = `${file.name} を開けませんでした`;
+      return;
+    }
+    drop.querySelector('strong').textContent = file.name;
+    render();
+    $('editor').hidden = false;
+    setStatus('');
+  }
+
+  // ---- 表示 ----
+  function render() {
+    const info = [
+      ['ファイル', `${doc.file.name}（${fmtSize(doc.file.size)}）`],
+      ['形式', doc.brand || '不明'],
+      ['長さ', fmtDuration(doc.info.duration)],
+    ];
+    doc.info.tracks.forEach((t, i) => {
+      const kind = { vide: '映像', soun: '音声', text: 'テキスト', sbtl: '字幕', meta: 'メタデータ' }[t.handler] || t.handler || '不明';
+      const parts = [t.codec, t.width && t.height ? `${t.width}×${t.height}` : '', t.language && t.language !== 'und' ? t.language : ''];
+      info.push([`トラック ${i + 1}`, `${kind} ${parts.filter(Boolean).join(' / ')}`]);
+    });
+    info.push(['moov の位置', doc.moovAtEnd ? 'ファイル末尾' : 'ファイル先頭側（ストリーミング向け）']);
+    if (doc.fragmented) info.push(['注意', '断片化 MP4 のため、メタデータを大きく増やすことはできません']);
+    $('info').replaceChildren(...info.flatMap(([k, v]) => [el('dt', k), el('dd', v)]));
+    $('tree').textContent = doc.outline.map(o => `${'  '.repeat(o.depth)}${printable(o.type)}  ${o.size.toLocaleString()} B`).join('\n');
+
+    $('creation').value = toLocalInput(doc.creation);
+    $('modification').value = toLocalInput(doc.modification);
+    $('tzName').textContent = `${Intl.DateTimeFormat().resolvedOptions().timeZone}, UTC${appleDate(new Date()).slice(-5)}`;
+
+    $('tags').replaceChildren(...TAGS.map(([key, label, multi]) => {
+      const wrap = el('div');
+      const id = 'tag-' + key.replace(/\W/g, '_');
+      const input = multi ? el('textarea') : el('input');
+      if (!multi) input.type = 'text';
+      if (multi) input.rows = 2;
+      input.id = id;
+      input.dataset.key = key;
+      const v = doc.itunes[key];
+      input.value = v || '';
+      input.dataset.original = input.value;
+      if (v === null) { input.disabled = true; input.placeholder = '（テキスト以外のデータ）'; }
+      const lab = el('label', label); lab.htmlFor = id;
+      wrap.append(lab, input);
+      return wrap;
+    }));
+
+    mdtaRows = doc.mdta.map(e => ({
+      index: e.index, ns: e.ns, name: e.name, original: e.text, value: e.text, isText: e.text !== null, size: e.size, deleted: false,
+    }));
+    renderMdta();
+
+    $('xyz').value = doc.xyz || '';
+    $('xyz').dataset.original = $('xyz').value;
+    removeLoci = false;
+    renderLoci();
+    refreshDates();
+    markChanged();
+  }
+
+  function renderMdta() {
+    const tbody = $('mdta');
+    if (!mdtaRows.length) { tbody.replaceChildren(el('tr', [el('td', 'なし')])); return; }
+    tbody.replaceChildren(...mdtaRows.map(r => {
+      const tr = el('tr');
+      if (r.deleted) tr.className = 'deleted';
+      const input = el('input');
+      input.type = 'text';
+      if (r.isText) {
+        input.value = r.value;
+        input.disabled = r.deleted;
+        if (r.value !== r.original) input.classList.add('changed');
+        input.addEventListener('input', () => { r.value = input.value; input.classList.toggle('changed', r.value !== r.original); });
+      } else {
+        input.disabled = true;
+        input.placeholder = `（バイナリ ${r.size} B）`;
+      }
+      const btn = el('button', r.deleted ? '戻す' : '削除');
+      btn.className = 'small' + (r.deleted ? '' : ' danger');
+      btn.addEventListener('click', () => {
+        if (r.index === null) mdtaRows = mdtaRows.filter(x => x !== r);
+        else r.deleted = !r.deleted;
+        renderMdta();
+      });
+      const key = el('td', r.name); key.className = 'key';
+      const act = el('td', [btn]); act.className = 'act';
+      tr.append(key, el('td', [input]), act);
+      return tr;
+    }));
+  }
+
+  function renderLoci() {
+    const l = doc.loci;
+    $('lociText').textContent = !l ? 'なし'
+      : removeLoci ? '削除されます'
+      : `緯度 ${l.latitude.toFixed(5)}, 経度 ${l.longitude.toFixed(5)}${l.altitude ? `, 高度 ${l.altitude.toFixed(1)} m` : ''}`;
+  }
+
+  function refreshDates() {
+    for (const id of ['creation', 'modification']) {
+      const input = $(id);
+      input.classList.toggle('changed', input.value !== toLocalInput(doc[id]));
+      $(id + 'Utc').textContent = utcLabel(fromLocalInput(input.value));
+    }
+  }
+
+  function markChanged() {
+    for (const input of document.querySelectorAll('#tags [data-key], #xyz')) {
+      input.classList.toggle('changed', input.value !== input.dataset.original);
+    }
+  }
+
+  function el(tag, content) {
+    const e = document.createElement(tag);
+    if (Array.isArray(content)) e.append(...content);
+    else if (content != null) e.textContent = content;
+    return e;
+  }
+  function printable(type) {
+    return /^[\x20-\x7e\xa9]{4}$/.test(type) ? type : '#' + [...type].reduce((n, c) => n * 256 + c.charCodeAt(0), 0);
+  }
+  function setStatus(msg, kind) { const s = $('status'); s.textContent = msg; s.className = kind || ''; }
+
+  // ---- 操作 ----
+  $('creation').addEventListener('input', refreshDates);
+  $('modification').addEventListener('input', refreshDates);
+  document.addEventListener('input', e => { if (e.target.matches('#tags [data-key], #xyz')) markChanged(); });
+  $('sameAsCreation').addEventListener('click', () => { $('modification').value = $('creation').value; refreshDates(); });
+  $('shiftBtn').addEventListener('click', () => {
+    const s = prompt('ずらす時間を入力してください（例: +9h, -30m, +1d, -3600s）', '+9h');
+    const m = s && s.trim().match(/^([+-]?)(\d+(?:\.\d+)?)\s*([dhms])$/i);
+    if (!m) { if (s) alert('形式が正しくありません'); return; }
+    const sec = (m[1] === '-' ? -1 : 1) * Number(m[2]) * { d: 86400, h: 3600, m: 60, s: 1 }[m[3].toLowerCase()];
+    for (const id of ['creation', 'modification']) {
+      const d = fromLocalInput($(id).value);
+      if (d) $(id).value = toLocalInput(new Date(d.getTime() + sec * 1000));
+    }
+    refreshDates();
+  });
+  $('addKey').addEventListener('click', () => {
+    const name = $('newKey').value.trim();
+    if (!name) { $('newKey').focus(); return; }
+    const existing = mdtaRows.find(r => r.name === name && !r.deleted && r.isText);
+    if (existing) existing.value = $('newValue').value;
+    else mdtaRows.push({ index: null, ns: 'mdta', name, original: null, value: $('newValue').value, isText: true, size: 0, deleted: false });
+    $('newKey').value = $('newValue').value = '';
+    renderMdta();
+  });
+  $('clearLocation').addEventListener('click', () => {
+    $('xyz').value = '';
+    removeLoci = true;
+    for (const r of mdtaRows) if (/location/i.test(r.name)) r.deleted = true;
+    mdtaRows = mdtaRows.filter(r => !(r.index === null && /location/i.test(r.name)));
+    renderLoci(); renderMdta(); markChanged();
+  });
+  $('resetBtn').addEventListener('click', () => { if (doc) { render(); setStatus(''); } });
+
+  function buildEdits() {
+    const edits = { applyToTracks: $('applyToTracks').checked };
+    const creation = fromLocalInput($('creation').value);
+    const modification = fromLocalInput($('modification').value);
+    const creationChanged = creation && $('creation').value !== toLocalInput(doc.creation);
+    if (creationChanged) edits.creation = creation;
+    if (modification && $('modification').value !== toLocalInput(doc.modification)) edits.modification = modification;
+
+    edits.itunes = {};
+    for (const input of document.querySelectorAll('#tags [data-key]')) {
+      if (!input.disabled && input.value !== input.dataset.original) edits.itunes[input.dataset.key] = input.value;
+    }
+
+    let rows = mdtaRows;
+    if (creationChanged && $('syncApple').checked) {
+      rows = rows.filter(r => !(r.name === APPLE_DATE && r.index === null));
+      const r = rows.find(r => r.name === APPLE_DATE && r.isText && !r.deleted);
+      if (r) rows = rows.map(x => x === r ? { ...r, value: appleDate(creation) } : x);
+      else rows = rows.concat({ index: null, ns: 'mdta', name: APPLE_DATE, original: null, value: appleDate(creation), isText: true });
+    }
+    if (rows.some(r => r.deleted || r.index === null || (r.isText && r.value !== r.original))) {
+      edits.mdta = rows.filter(r => !r.deleted).map(r => ({
+        index: r.index, ns: r.ns, name: r.name,
+        text: r.isText && (r.index === null || r.value !== r.original) ? r.value : undefined,
+      }));
+    }
+    if ($('xyz').value !== $('xyz').dataset.original) edits.xyz = $('xyz').value.trim();
+    if (removeLoci && doc.loci) edits.removeLoci = true;
+    return edits;
+  }
+
+  $('saveBtn').addEventListener('click', () => {
+    if (!doc) return;
+    try {
+      const { blob } = MP4Meta.save(doc, buildEdits());
+      const name = doc.file.name.replace(/(\.[^.]+)?$/, m => '_edited' + (m || '.mp4'));
+      const a = el('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      setStatus(`${name} を保存しました`, 'ok');
+    } catch (err) {
+      console.error(err);
+      setStatus('保存できませんでした: ' + err.message, 'error');
+    }
+  });
+})();
+</script>
+</body>
+</html>
