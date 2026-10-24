@@ -4,20 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MP4 メタデータエディタ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <style>
   :root {
     --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #667085; --line: #e3e6eb;
     --accent: #2f6fed; --accent-text: #fff; --danger: #d13b3b; --ok: #1a8a4a; --field: #fff;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #12151b; --card: #1b1f27; --text: #e7eaf0; --muted: #98a2b3; --line: #2c323d;
       --accent: #5b8cff; --accent-text: #0b0e14; --danger: #ff6b6b; --ok: #4cc38a; --field: #12151b;
+      color-scheme: dark;
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151b; --card: #1b1f27; --text: #e7eaf0; --muted: #98a2b3; --line: #2c323d;
+    --accent: #5b8cff; --accent-text: #0b0e14; --danger: #ff6b6b; --ok: #4cc38a; --field: #12151b;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  main { max-width: 860px; margin: 0 auto; padding-block: 24px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
   h1 { font-size: 1.5rem; margin: 0 0 4px; }
   h2 { font-size: 1.05rem; margin: 0 0 12px; }
   .lead { color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
@@ -97,9 +104,10 @@
       </div>
       <div class="row" style="margin-top:10px">
         <button class="small" id="sameAsCreation">更新日時を作成日時に合わせる</button>
-        <button class="small" id="shiftBtn">時間をずらす…</button>
+        <input type="text" id="shiftAmount" value="+9h" aria-label="ずらす時間" style="width:80px;padding:4px 8px">
+        <button class="small" id="shiftBtn">時間をずらす</button>
       </div>
-      <p class="hint">入力はこのブラウザのタイムゾーン（<span id="tzName"></span>）で解釈され、ファイルには UTC で保存されます。</p>
+      <p class="hint">ずらす時間は +9h、-30m、+1d、-3600s のように指定します。入力はこのブラウザのタイムゾーン（<span id="tzName"></span>）で解釈され、ファイルには UTC で保存されます。</p>
       <label class="check"><input type="checkbox" id="applyToTracks" checked> 各トラック（映像・音声）の日時も同じ値にする</label>
       <label class="check"><input type="checkbox" id="syncApple" checked> <span>Apple 形式の撮影日時（com.apple.quicktime.creationdate）も更新する<span class="hint" style="display:block">iPhone の写真アプリなどはこちらを優先して読みます。無い場合は追加します。</span></span></label>
     </section>
@@ -336,9 +344,9 @@
   document.addEventListener('input', e => { if (e.target.matches('#tags [data-key], #xyz')) markChanged(); });
   $('sameAsCreation').addEventListener('click', () => { $('modification').value = $('creation').value; refreshDates(); });
   $('shiftBtn').addEventListener('click', () => {
-    const s = prompt('ずらす時間を入力してください（例: +9h, -30m, +1d, -3600s）', '+9h');
-    const m = s && s.trim().match(/^([+-]?)(\d+(?:\.\d+)?)\s*([dhms])$/i);
-    if (!m) { if (s) alert('形式が正しくありません'); return; }
+    const m = $('shiftAmount').value.trim().match(/^([+-]?)(\d+(?:\.\d+)?)\s*([dhms])$/i);
+    if (!m) { setStatus('ずらす時間は +9h、-30m のように入力してください', 'error'); return; }
+    setStatus('');
     const sec = (m[1] === '-' ? -1 : 1) * Number(m[2]) * { d: 86400, h: 3600, m: 60, s: 1 }[m[3].toLowerCase()];
     for (const id of ['creation', 'modification']) {
       const d = fromLocalInput($(id).value);
@@ -395,23 +403,42 @@
     return edits;
   }
 
-  $('saveBtn').addEventListener('click', () => {
+  // claude.ai の Artifact 内では downloads 機能で保存し、それ以外では通常のダウンロードを使う
+  const downloadsReady = window.claude && window.claude.use
+    ? window.claude.use('downloads').catch(() => null)
+    : Promise.resolve(null);
+
+  $('saveBtn').addEventListener('click', async () => {
     if (!doc) return;
+    let blob;
     try {
-      const { blob } = MP4Meta.save(doc, buildEdits());
-      const name = doc.file.name.replace(/(\.[^.]+)?$/, m => '_edited' + (m || '.mp4'));
-      const a = el('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      setStatus(`${name} を保存しました`, 'ok');
+      blob = MP4Meta.save(doc, buildEdits()).blob;
     } catch (err) {
       console.error(err);
       setStatus('保存できませんでした: ' + err.message, 'error');
+      return;
     }
+    let name = doc.file.name.replace(/(\.[^.]+)?$/, m => '_edited' + (m || '.mp4'));
+    const downloads = await downloadsReady;
+    if (downloads) {
+      // Artifact から保存できる拡張子は限られるため .mp4 にそろえる
+      name = name.replace(/\.[^.]+$/, '.mp4');
+      try {
+        await downloads.save({ filename: name, data: blob });
+        setStatus(`${name} を保存しました`, 'ok');
+      } catch (err) {
+        setStatus(err && err.code === 'declined' ? '保存をキャンセルしました' : '保存できませんでした: ' + (err && err.message || err), 'error');
+      }
+      return;
+    }
+    const a = el('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    setStatus(`${name} を保存しました`, 'ok');
   });
 })();
 </script>
